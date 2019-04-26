@@ -1,0 +1,27 @@
+{
+  "name": "node-embed-python",
+  "version": "0.0.1",
+  "description": "Import python runtime directly into webpages with Electron",
+  "main": "index.js",
+  "author": "Andrew Pouliot",
+  "license": "MIT",
+  "scripts": {
+    "test": "jest",
+    "dev": "npm run configure-debug && npm run watch-ninja",
+    "watch-ninja": "nodemon -w src/ -x \"ninja -C build/\" -e h,cpp,cc,c",
+    "configure-debug": "cmake-js configure --debug"
+  },
+  "devDependencies": {
+    "@types/jest": "^24.0.11",
+    "@types/node": "^11.13.7",
+    "cmake-js": "^4.x.x",
+    "jest": "^24.7.1",
+    "node-addon-api": "^1.6.3",
+    "nodemon": "^1.18.11",
+    "ts-jest": "^24.0.2",
+    "typescript": "^3.4.5"
+  },
+  "dependencies": {
+    "bindings": "^1.5.0"
+  }
+}
