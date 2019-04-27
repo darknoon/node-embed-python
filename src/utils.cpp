@@ -172,29 +172,25 @@ Napi::Value ConvertToJS(const Napi::Env& env, PyObject* py_object) {
     return scope.Escape(js_array);
   } else if (PyArray_Check(py_object)) {
     std::cout << "Found numpy array." << std::endl;
-
+  } else if (PyModule_Check(py_object)) {
+    std::cout << "Cannot really export module." << std::endl;
+    PyObject* module_dict = PyModule_GetDict(py_object);
+    auto dict = ConvertToJS(env, module_dict);
+    return scope.Escape(dict);
   } else {
-    std::cout << "Converting python unknown object." << std::endl;
+    // TODO: here is where we want to return a PyObjectWrapper that will serve
+    // as a proxy for the desired object
+    std::cout << "Converting python unknown object of type"
+              << py_object->ob_type->tp_name << std::endl;
     PyObject* str_repr = PyObject_Str(py_object);
-
-    // debug only
-    if (str_repr != nullptr) {
-      std::cout << "found string repr" << std::endl;
-      PyUnicode_READY(str_repr);
-      std::cout << "str: ." << PyUnicode_2BYTE_DATA(str_repr) << std::endl;
+    if (PyUnicode_Check(str_repr)) {
+      auto str = StringToJS(env, str_repr);
+      Py_DECREF(str_repr);
+      return scope.Escape(str);
     }
-    return scope.Escape(Napi::Value());
-    // TODO: return the str rep instead
-    // Py_XINCREF(py_object);
-    // PyObject* py_object_repr = PyObject_Repr(py_object);
-    // if (py_object_repr != py_object) {
-    //   Napi::Value js_object = ConvertToJS(env, py_object_repr);
-    //   return scope.Escape(js_object);
-    // } else {
-    // }
   }
 
-  return Napi::Value();
+  return scope.Escape(Napi::Value());
 #pragma GCC diagnostic pop
 }
 

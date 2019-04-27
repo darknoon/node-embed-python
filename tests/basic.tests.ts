@@ -29,8 +29,8 @@ describe("can eval python and return a value", () => {
     expect(x).toEqual([1, 2, 3]);
   });
 
-  test.skip("numpy array", () => {
-    const { numpy } = exec(`import numpy as np`);
+  test("numpy array", () => {
+    const { numpy } = exec("import numpy as np");
     const x = numpy.array([1, 2, 3]);
 
     expect(x).toEqual([1, 2, 3]);
@@ -43,10 +43,10 @@ describe("can eval python and return a value", () => {
   });
 
   test("function", () => {
-    evalExpr(`def a(x):
+    const { a } = exec(`
+def a(x):
     return x
 `);
-    const a = evalExpr(`a`);
     // const x = evalExpr(`a`);
     expect(a).toBeDefined();
     console.log("a is ", a);
