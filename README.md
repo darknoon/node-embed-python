@@ -6,10 +6,10 @@ Let's run PyTorch model on a high-end GPU, and display the results in WebGL:
 
 ```javascript
 const python = require("node-embed-python");
-const { importModule: py } = python;
+const { evalModule: py } = python;
 
 // Define model in Python
-const { run_my_model: runModel } = py`
+const { run_my_model: runModel } = py(`
 import numpy as np
 import torch
 
@@ -18,7 +18,7 @@ device = torch.device("cuda")
 # Input is tensor of size []
 def run_my_model(x):
     return biggan(x).cpu().numpy()
-`;
+`);
 
 // Integrate model with interactive javascript code
 const np = python.import("numpy");

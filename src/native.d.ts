@@ -1,3 +1,3 @@
-// Possible values for dtype
-
-export function run(str: string): any;
+// Returns {var_name: value} mapping
+export function exec(str: string): Object;
+export function evalExpr(str: string): any;

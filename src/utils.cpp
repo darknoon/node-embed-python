@@ -107,13 +107,15 @@ Napi::Value ConvertToJS(const Napi::Env& env, PyObject* py_object) {
   // The Python API is not const-correct
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wwritable-strings"
-  // PyThreadStateLock py_thread_lock;
+  PyThreadStateLock py_thread_lock;
 
   // Lets us return things
   Napi::EscapableHandleScope scope(env);
 
   // Not really supposed to be passed nullptr, but handle it anyway
   if (py_object == nullptr) {
+    std::cout << "ConvertToJS passed nullptr. Does this mean there is an error?"
+              << std::endl;
     return scope.Escape(scope.Env().Null());
   }
 #if DEBUG

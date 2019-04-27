@@ -13,9 +13,3 @@ test_module = TestModule()
 
 example = (torch.rand(1, 4), torch.rand(1, 4))
 traced_script_module = torch.jit.trace(test_module, example)
-
-traced_script_module.save("test_model.pt")
-
-loaded = torch.jit.load("test_model.pt")
-
-loaded(*example)

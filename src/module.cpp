@@ -6,59 +6,69 @@
 #include "py_object_wrapper.h"
 #include "utils.h"
 
-// from utils.cc in python.node
-class PyThreadStateLock {
- public:
-  PyThreadStateLock(void) { py_gil_state = PyGILState_Ensure(); }
-
-  ~PyThreadStateLock(void) { PyGILState_Release(py_gil_state); }
-
- private:
-  PyGILState_STATE py_gil_state;
-};
-
-// Run arbitrary python code.
-// Argument 0: string to evaluate
-Napi::Value run(const Napi::CallbackInfo& info) {
+/**
+ * Run arbitrary python statements.
+ * Returns any local variables defined in an object
+ */
+Napi::Value exec(const Napi::CallbackInfo& info) {
   auto env = info.Env();
-  auto arg_count = info.Length();
   auto str = std::string(info[0].As<Napi::String>());
-
-  // std::cout << "Will run: `" << str << "`" << std::endl;
-
+  // Doesn't like parsing without newline, but we don't need to be so strict
   str = str + "\n";
 
   Napi::EscapableHandleScope scope(env);
 
-  auto flags = PyCompilerFlags{Py_InspectFlag | Py_InteractiveFlag |
-                               Py_BytesWarningFlag | Py_DebugFlag};
+  auto flags = PyCompilerFlags{Py_InspectFlag | Py_InteractiveFlag};
 
-  // from Python/pythonrun.c@PyRun_SimpleStringFlags(...)
   PyObject* m = PyImport_AddModule("__main__");
   PyObject* globals = PyModule_GetDict(m);
+  PyObject* locals = PyDict_New();
 
-  // description of Py_eval_input brought to you by
+  // Py_file_input lets you run multiple statements
   // http://boost.cppll.jp/HEAD/libs/python/doc/tutorial/doc/using_the_interpreter.html
-  // When using Py_eval_input, the input string must contain a single expression
-  // and its result is returned. When using Py_file_input, the string can
-  // contain an abitrary number of statements and None is returned.
-  // Py_single_input works in the same way as Py_file_input but only accepts a
-  // single statement.
+  // and https://stackoverflow.com/a/2220790
+  // We want expressions to run but
   PyObject* result =
-      PyRun_StringFlags(str.c_str(), Py_eval_input, globals, globals, &flags);
+      PyRun_StringFlags(str.c_str(), Py_file_input, globals, locals, &flags);
 
-  // Debug logging of returned result type & ptr
-  // std::cout << "> " << (result ? result->ob_type->tp_name : "") << "(" <<
-  // result << ")" << std::endl;
+  // TODO: exception handling
 
-  if (result == nullptr) {
-    std::cout << "Attempting to handle python error" << std::endl;
-    PyObject *type, *value, *traceback;
-    PyErr_Fetch(&type, &value, &traceback);
-  }
-  auto retval = ConvertToJS(env, result);
+  // Return a dictionary of local variables to the caller
+  auto retval = ConvertToJS(env, locals);
+
+  Py_DECREF(locals);
   Py_XDECREF(result);
   return scope.Escape(retval);
+}
+
+/**
+ * Run a single python expression, eg "1+2", not "a=1"
+ * Returns any local variables defined in an object
+ */
+
+Napi::Value evalExpr(const Napi::CallbackInfo& info) {
+  auto env = info.Env();
+  auto str = std::string(info[0].As<Napi::String>());
+  // Doesn't like parsing without newline, but we don't need to be so strict
+  str = str + "\n";
+
+  Napi::EscapableHandleScope scope(env);
+
+  auto flags = PyCompilerFlags{Py_InspectFlag | Py_InteractiveFlag};
+
+  PyObject* m = PyImport_AddModule("__main__");
+  PyObject* globals = PyModule_GetDict(m);
+  // Don't care about locals for eval
+  PyObject* locals = PyDict_New();
+
+  PyObject* result =
+      PyRun_StringFlags(str.c_str(), Py_eval_input, globals, locals, &flags);
+  // TODO: exception handling
+
+  auto js_result = ConvertToJS(env, result);
+
+  Py_XDECREF(result);
+  return scope.Escape(js_result);
 }
 
 // Initialize this module, setting up python
@@ -70,12 +80,10 @@ std:
   // definition
   do_numpy_import();
 
-  // PyObject* np = PyImport_ImportModule("numpy");
-  // std::cout << "numpy is " << np << std::endl;
-  // Py_XINCREF(np);
-  exports.Set("run", Napi::Function::New(env, run));
+  exports.Set("exec", Napi::Function::New(env, exec));
+  exports.Set("evalExpr", Napi::Function::New(env, evalExpr));
   auto noexport = Napi::Object();
-  PyObjectProxyHandler::Init(env, noexport);
+  PyObjectProxyHandler::Init(env, exports);
   return exports;
 }
 
