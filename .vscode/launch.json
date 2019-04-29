@@ -23,7 +23,7 @@
       "MIMode": "lldb"
     },
     {
-      "name": "Debug numpy test with LLDB",
+      "name": "Debug single test with LLDB",
       "type": "cppdbg",
       "request": "launch",
       "program": "/usr/local/bin/node",
@@ -32,8 +32,7 @@
         "--harmony",
         "./node_modules/jest-cli/bin/jest.js",
         "--runInBand",
-        "tests/basic.tests.ts",
-        "-t",
+        "-t ArrayBuffer",
         "numpy",
         "--verbose=false"
       ],

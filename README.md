@@ -6,10 +6,10 @@ Let's run PyTorch model on a high-end GPU, and display the results in WebGL:
 
 ```javascript
 const python = require("node-embed-python");
-const { evalModule: py } = python;
+const { exec: py } = python;
 
 // Define model in Python
-const { run_my_model: runModel } = py(`
+const { run_my_model: runModel, np } = py(`
 import numpy as np
 import torch
 
@@ -21,8 +21,6 @@ def run_my_model(x):
 `);
 
 // Integrate model with interactive javascript code
-const np = python.import("numpy");
-
 const x = np.randn([1, 2, 3]);
 
 const result = runModel(x);

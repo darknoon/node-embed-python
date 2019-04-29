@@ -69,10 +69,10 @@ PyObjectProxyHandler::PyObjectProxyHandler(const Napi::CallbackInfo& info,
 
 bool PyObjectProxyHandler::IsProxyValue(Napi::Value value) {
   auto object = value.As<Napi::Object>();
-  auto getHandshake = object.Get("secretHandshake");
+  auto getHandshake = object.Get("@@secretHandshake@@");
   if (getHandshake.IsExternal()) {
     auto external =
-        object.Get("secretHandshake").As<Napi::External<PyObject>>();
+        object.Get("@@secretHandshake@@").As<Napi::External<PyObject>>();
     return true;
   } else {
     return false;
@@ -82,8 +82,9 @@ bool PyObjectProxyHandler::IsProxyValue(Napi::Value value) {
 Napi::External<PyObject> PyObjectProxyHandler::GetProxyValue(
     Napi::Value value) {
   auto object = value.As<Napi::Object>();
-  auto getHandshake = object.Get("secretHandshake");
-  auto external = object.Get("secretHandshake").As<Napi::External<PyObject>>();
+  auto getHandshake = object.Get("@@secretHandshake@@");
+  auto external =
+      object.Get("@@secretHandshake@@").As<Napi::External<PyObject>>();
   return external;
 }
 
@@ -142,7 +143,7 @@ Napi::Value PyObjectProxyHandler::get(const Napi::CallbackInfo& info) {
       py_value = PyObject_Str(py_object);
     } else if (propname == "valueOf") {
       return env.Null();
-    } else if (propname == "secretHandshake") {
+    } else if (propname == "@@secretHandshake@@") {
       Napi::EscapableHandleScope scope(env);
 
       return scope.Escape(target);
@@ -224,6 +225,9 @@ Napi::Value CallPythonFunction(const Napi::CallbackInfo& info) {
   auto args = PyTuple_New(length);
   for (int i = 0; i < length; i++) {
     auto arg = ConvertToPy(info[i]);
+    if (!arg) {
+      ThrowPythonException(info.Env());
+    }
     // Steals reference to arg, so don't need to decref
     PyTuple_SetItem(args, i, arg);
   }
