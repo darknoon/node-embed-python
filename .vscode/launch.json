@@ -1,20 +1,47 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "name": "(lldb) Launch",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": "/bin/bash",
-            "args": ["/usr/local/bin/npx jest"],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "externalConsole": true,
-            "MIMode": "lldb"
-        }
-    ]
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug tests with LLDB",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "/usr/local/bin/node",
+      "preLaunchTask": "",
+      "args": [
+        "--harmony",
+        "./node_modules/jest-cli/bin/jest.js",
+        "--runInBand",
+        "--verbose=false"
+      ],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": true,
+      "MIMode": "lldb"
+    },
+    {
+      "name": "Debug numpy test with LLDB",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "/usr/local/bin/node",
+      "preLaunchTask": "",
+      "args": [
+        "--harmony",
+        "./node_modules/jest-cli/bin/jest.js",
+        "--runInBand",
+        "tests/basic.tests.ts",
+        "-t",
+        "numpy",
+        "--verbose=false"
+      ],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": true,
+      "MIMode": "lldb"
+    }
+  ]
 }

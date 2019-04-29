@@ -8,7 +8,8 @@
   "scripts": {
     "test": "jest",
     "dev": "npm run configure-debug && npm run watch-ninja",
-    "watch-ninja": "nodemon -w src/ -x \"ninja -C build/\" -e h,cpp,cc,c",
+    "watch-ninja": "nodemon -w src/ -x \"ninja -C build/ && touch tests/basic.tests.ts\" -e h,cpp,cc,c",
+    "build-ninja": "ninja -C build/",
     "configure-debug": "cmake-js configure --debug"
   },
   "devDependencies": {
