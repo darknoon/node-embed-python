@@ -7,8 +7,22 @@
 export function exec(str: string): { [variableName: string]: any };
 
 /**
- * evalExpr runs a single Python expression, returning the result
- * evalExpr("1 + 2") => 3
- * evalExpr("[1,2] + [3]") => [1,2,3]
+ * py template literal
+ * @param str Python
+ * @description
+ * python-node-embed also supports the py`...` template literal for multi-line statements
+ * ```
+ * const {code} = py`code = "here"`
+ * ```
  */
-export function evalExpr(str: string): any;
+export function py(
+  str: TemplateStringsArray,
+  ...any: any[]
+): { [variableName: string]: any };
+
+/**
+ * expr runs a single Python expression, returning the result
+ * expr("1 + 2") => 3
+ * expr("[1,2] + [3]") => [1,2,3]
+ */
+export function expr(str: string): any;

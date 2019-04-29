@@ -1,4 +1,4 @@
-import { exec, evalExpr } from "../src/index";
+import { py } from "../src/index";
 
 // Implement zeros / ones independently to verify correctness
 function* repeat<V>(times: number, v: V) {
@@ -19,19 +19,19 @@ const fill = (shape: Array<number>, value: number = 0) => {
 
 describe("can handle nested numpy arrays", () => {
   test("numpy array", () => {
-    const { a } = exec(`
-import numpy as np
-a = np.array([[10, 20, 40]])
-`);
+    const { a } = py`
+    import numpy as np
+    a = np.array([[10, 20, 40]])`;
+
     const data = a.tolist();
     expect(data).toEqual([[10, 20, 40]]);
   });
 
   test("likes big arrays", () => {
-    const { a } = exec(`
-import numpy as np
-a = np.zeros((32, 8, 3))
-`);
+    const { a } = py`
+    import numpy as np
+    a = np.zeros((32, 8, 3))`;
+
     // Call numpy.ndarray's tolist method
     const data = a.tolist();
     // Construct our own zero-filled Array of Arrays of Arrays in JS
@@ -41,7 +41,7 @@ a = np.zeros((32, 8, 3))
   });
 
   test.skip("doesn't crash on ArrayBuffer", () => {
-    const { np } = exec(`import numpy as np`);
+    const { np } = py`import numpy as np`;
 
     expect(() => {
       np.frombuffer(new ArrayBuffer(0));

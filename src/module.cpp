@@ -49,7 +49,7 @@ Napi::Value exec(const Napi::CallbackInfo& info) {
  * Returns any local variables defined in an object
  */
 
-Napi::Value evalExpr(const Napi::CallbackInfo& info) {
+Napi::Value expr(const Napi::CallbackInfo& info) {
   auto env = info.Env();
   auto str = std::string(info[0].As<Napi::String>());
   // Doesn't like parsing without newline, but we don't need to be so strict
@@ -67,7 +67,7 @@ Napi::Value evalExpr(const Napi::CallbackInfo& info) {
   PyObject* result =
       PyRun_StringFlags(str.c_str(), Py_eval_input, globals, locals, &flags);
   // TODO: exception handling
-  std::cout << "evalExpr() result value:" << result << std::endl;
+  std::cout << "expr() result value:" << result << std::endl;
 
   // Exception handling
   if (!result) {
@@ -94,7 +94,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   do_numpy_import();
 
   exports.Set("exec", Napi::Function::New(env, exec));
-  exports.Set("evalExpr", Napi::Function::New(env, evalExpr));
+  exports.Set("expr", Napi::Function::New(env, expr));
   PyObjectProxyHandler::Initialize(env, exports);
   return exports;
 }

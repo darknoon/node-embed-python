@@ -52,5 +52,6 @@
         "algorithm": "cpp"
     },
     "C_Cpp.intelliSenseEngineFallback": "Disabled",
-    "git.ignoreLimitWarning": true
+    "git.ignoreLimitWarning": true,
+    "editor.tabSize": 2
 }
