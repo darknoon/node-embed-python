@@ -29,11 +29,19 @@ describe("can eval python and return a value", () => {
     expect(x).toEqual([1, 2, 3]);
   });
 
-  test("numpy array", () => {
-    const { numpy } = exec("import numpy as np");
-    const x = numpy.array([1, 2, 3]);
+  test("None", () => {
+    const x = evalExpr(`None`);
+    expect(x).toEqual(null);
+  });
 
-    expect(x).toEqual([1, 2, 3]);
+  test("numpy array", () => {
+    const { np } = exec("import numpy as np");
+    const { list } = exec("list = list");
+
+    const x = np.array([1, 2, 3]);
+    console.log("type of x is ", typeof x);
+    const xl = list(x);
+    expect(xl).toEqual([1, 2, 3]);
   });
 
   test("lambda", () => {
@@ -49,7 +57,20 @@ def a(x):
 `);
     // const x = evalExpr(`a`);
     expect(a).toBeDefined();
-    console.log("a is ", a);
     expect(a(123)).toBe(123);
+  });
+});
+
+describe("Handles Python exceptions", () => {
+  test("simple raise", () => {
+    expect(() => {
+      exec(`raise Exception("Test Exception")`);
+    }).toThrowError("Test Exception");
+  });
+
+  test("syntax error", () => {
+    expect(() => {
+      exec(`def myfun`);
+    }).toThrowError(/SyntaxError: .*/);
   });
 });

@@ -40,21 +40,181 @@ const toJS = o => {
 
  */
 
+// Make sure these static fields are real variables included in the binary
 Napi::FunctionReference PyObjectProxyHandler::proxyHandler;
+Napi::Symbol PyObjectProxyHandler::secretHandshake;
 
-Napi::Object PyObjectProxyHandler::Init(Napi::Env env, Napi::Object exports) {
-  Napi::Function func = DefineClass(env, "Wrapped<?>",
+Napi::Object PyObjectProxyHandler::Initialize(Napi::Env env,
+                                              Napi::Object exports) {
+  Napi::Function func = DefineClass(env, "PyObjectHandler<?>",
                                     {
                                         StaticMethod("get", get),
                                         StaticMethod("set", set),
+                                        StaticMethod("toString", toString),
                                     });
 
   proxyHandler = Napi::Persistent(func);
   proxyHandler.SuppressDestruct();
+
+  secretHandshake = Napi::Symbol::New(env, "@@PyObject");
+
   return exports;
 }
 
-static Napi::Value CallPython(const Napi::CallbackInfo& info) {
+PyObjectProxyHandler::PyObjectProxyHandler(const Napi::CallbackInfo& info,
+                                           const PyObject* object)
+    : Napi::ObjectWrap<PyObjectProxyHandler>(info) {
+  // TODO: do we need to do anything here?
+}
+
+bool PyObjectProxyHandler::IsProxyValue(Napi::Value value) {
+  auto object = value.As<Napi::Object>();
+  auto getHandshake = object.Get("secretHandshake");
+  if (getHandshake.IsExternal()) {
+    auto external =
+        object.Get("secretHandshake").As<Napi::External<PyObject>>();
+    return true;
+  } else {
+    return false;
+  }
+}
+
+Napi::External<PyObject> PyObjectProxyHandler::GetProxyValue(
+    Napi::Value value) {
+  auto object = value.As<Napi::Object>();
+  auto getHandshake = object.Get("secretHandshake");
+  auto external = object.Get("secretHandshake").As<Napi::External<PyObject>>();
+  return external;
+}
+
+Napi::Value PyObjectProxyHandler::WrapObject(Napi::Env env, PyObject* object) {
+  assert(object);
+
+  std::cout << "Wrapping object" << std::endl;
+  // grab Proxy class
+  auto Proxy = env.Global().Get("Proxy").As<Napi::Function>();
+  // std::cout << "Proxy is: " << Proxy.ToString().Utf8Value() << std::endl;
+
+  // Use an External as the target of the proxy (holds the PyObject for us to
+  // use later)
+  using Hint = int;
+  // Deref Python object when this proxy's target gets cleaned up
+  auto finalizer = [](Napi::Env _, PyObject* o, Hint* __) {
+    printf("Finalized proxy for obj %p", o);
+    Py_DECREF(o);
+  };
+  auto wrapped =
+      Napi::External<PyObject>::New(env, object, finalizer, (Hint*)nullptr);
+  Py_INCREF(object);
+  // std::cout << "wrapped is: " << wrapped << std::endl;
+
+  // Grab the global proxy handler
+  auto handler = proxyHandler.Value();
+  // std::cout << "handler is: " << handler.ToString().Utf8Value() << std::endl;
+
+  // auto proxy =
+  //     Proxy.New({napi_value(Napi::EscapableHandleScope(env).Escape(wrapped)),
+  //                napi_value(Napi::EscapableHandleScope(env).Escape(handler))});
+
+  auto proxy = Proxy.New({napi_value(wrapped), napi_value(handler)});
+
+  // std::cout << "proxy is: " << proxy << std::endl;
+
+  Napi::EscapableHandleScope scope(env);
+  return scope.Escape(proxy);
+}
+
+Napi::Value PyObjectProxyHandler::get(const Napi::CallbackInfo& info) {
+  auto env = info.Env();
+
+  auto target = info[0];
+  auto prop = info[1];
+  auto receiver = info[2];
+
+  if (prop.Type() == napi_string) {
+    auto propname = prop.ToString().Utf8Value();
+    PyObject* py_object = target.As<Napi::External<PyObject>>().Data();
+    std::cout << "PyObject get " << py_object << "[" << propname << "]"
+              << std::endl;
+
+    PyObject* py_value = NULL;
+    if (propname == "toString") {
+      py_value = PyObject_Str(py_object);
+    } else if (propname == "valueOf") {
+      return env.Null();
+    } else if (propname == "secretHandshake") {
+      Napi::EscapableHandleScope scope(env);
+
+      return scope.Escape(target);
+    } else {
+      PyObject* attr = ConvertToPy(prop);
+      py_value = PyObject_GetAttr(py_object, attr);
+      // std::cout << "py_object." << prop.ToString().Utf8Value() << " = " <<
+      // obj
+      //           << std::endl;
+      Py_DECREF(attr);
+    }
+
+    Napi::EscapableHandleScope scope(env);
+    auto js_obj = ConvertToJS(env, py_value);
+    return scope.Escape(js_obj);
+  } else if (prop.Type() == napi_number) {
+    std::cout << "get[number] unimplemented" << std::endl;
+    return env.Undefined();
+  } else if (prop.Type() == napi_symbol) {
+    // One of the special symbol gets in JS
+    auto symbol = prop.As<Napi::Symbol>();
+
+    std::cout << "get[" << describe_symbol(symbol) << "]" << std::endl;
+    auto iteratorSymbol = Napi::Symbol::WellKnown(env, "iterator");
+    auto toPrimitiveSymbol = Napi::Symbol::WellKnown(env, "toPrimitive");
+    // return env.Null();
+    if (symbol == secretHandshake) {
+      Napi::EscapableHandleScope scope(env);
+      return scope.Escape(target);
+    } else {
+      // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Proxy/handler/get
+      // Reflect.get(target, prop, receiver)
+      auto Reflect = env.Global().Get("Reflect").As<Napi::Object>();
+      auto get = Reflect.Get("get").As<Napi::Function>();
+      auto result = get.Call(Reflect, {target, prop, receiver});
+      std::cout << "Reflect.get() -> " << CoerceToString(result) << " ("
+                << describe_napi_value_type(result) << ")" << std::endl;
+
+      // Escape it
+      Napi::EscapableHandleScope scope(env);
+      return scope.Escape(result);
+    }
+  } else {
+    // TODO: throw here. Can't index by other things yet.
+    Napi::EscapableHandleScope scope(env);
+    return scope.Escape(Napi::Value());
+  }
+}
+void PyObjectProxyHandler::set(const Napi::CallbackInfo& info) {
+  std::cout << "set() handler called" << std::endl;
+}
+
+Napi::Value PyObjectProxyHandler::toString(const Napi::CallbackInfo& info) {
+  auto env = info.Env();
+
+  auto target = info[0];
+  auto receiver = info[1];
+  std::cout << "toString() on PyObject Proxy" << std::endl;
+
+  return Napi::String::New(env, "<PyObject Proxy>");
+}
+
+// TODO: move this function wrapper
+// For calling functions
+Napi::Function WrapCallable(const Napi::Env& env, PyObject* fn) {
+  Py_XINCREF(fn);
+  // std::cout << "wrapping callable " << fn << std::endl;
+  // TODO: set a better description for the python function
+  return Napi::Function::New(env, &CallPythonFunction, "[[python call]]", fn);
+}
+
+Napi::Value CallPythonFunction(const Napi::CallbackInfo& info) {
   Napi::EscapableHandleScope scope(info.Env());
   auto d = (PyObject*)info.Data();
   auto length = info.Length();
@@ -76,33 +236,10 @@ static Napi::Value CallPython(const Napi::CallbackInfo& info) {
             << std::endl;
 
   auto js_value = ConvertToJS(info.Env(), result);
+  // auto js_value_str = CoerceToString(js_value);
+  // std::cout << "result of call in JS is " << js_value_str
+  //           << " type: " << js_value.Type() << std::endl;
+
   Py_XDECREF(result);
   return scope.Escape(js_value);
 }
-
-Napi::Function PyObjectProxyHandler::WrapCallable(const Napi::Env& env,
-                                                  PyObject* fn) {
-  Py_XINCREF(fn);
-  // std::cout << "wrapping callable " << fn << std::endl;
-  return Napi::Function::New(env, &CallPython, "[[python call]]", fn);
-}
-
-PyObjectProxyHandler::PyObjectProxyHandler(const Napi::CallbackInfo& info,
-                                           const PyObject* object)
-    : Napi::ObjectWrap<PyObjectProxyHandler>(info) {
-  auto env = info.Env();
-
-  Napi::Function func = DefineClass(env, "Wrapped<?>",
-                                    {
-                                        StaticMethod("get", get),
-                                        StaticMethod("set", set),
-                                    });
-
-  Napi::HandleScope scope(info.Env());
-  Napi::String value = info[0].As<Napi::String>();
-}
-
-Napi::Value PyObjectProxyHandler::get(const Napi::CallbackInfo& info) {
-  return Napi::Value();
-}
-void PyObjectProxyHandler::set(const Napi::CallbackInfo& info) {}

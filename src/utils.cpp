@@ -8,65 +8,116 @@
 #include <numpy/arrayobject.h>
 
 int do_numpy_import(void) {
+  // This is a macro, so this function isn't useless
+  // It actually returns an int from inside the macro
   import_array();
+  // Silences warning
   return 0;
 }
 
-Napi::Error ConvertToJSException(const Napi::Env& env,
+std::string CoerceToString(Napi::Value v) {
+  auto env = v.Env();
+  napi_value result;
+  napi_status status =
+      napi_get_named_property(env, napi_value(v), "toString", &result);
+  if (status == napi_ok) {
+    auto toString = Napi::Value(env, result).As<Napi::Function>();
+    // NOT the same as .Call(). Need _this_ bound to the value or we throw.
+    auto string = toString.Call(v, {});
+    return string.As<Napi::String>().Utf8Value();
+  } else {
+    return "<no toString()>";
+  }
+}
+
+void ThrowPythonException(Napi::Env env) {
+  PyThreadStateLock py_thread_lock;
+
+  Napi::HandleScope scope(env);
+
+  PyObject* py_exception_type = NULL;
+  PyObject* py_exception_value = NULL;
+  PyObject* py_exception_traceback = NULL;
+
+  PyErr_Fetch(&py_exception_type, &py_exception_value, &py_exception_traceback);
+
+  // No exception from python
+  if (py_exception_type == NULL)
+    return;
+
+  Napi::Error js_exception = ConvertToJSException(
+      env, py_exception_type, py_exception_value, py_exception_traceback);
+
+#if DEBUG
+  // Print exception backtrace in Debug mode
+  if (py_exception_traceback != NULL) {
+    PyObject* py_exception_traceback_string =
+        PyObject_Str(py_exception_traceback);
+    printf("Throwing Py Exception as JS: %s\n",
+           PyString_AsString(py_exception_traceback_string));
+    Py_XDECREF(py_exception_traceback_string);
+  }
+#endif
+  Py_XDECREF(py_exception_type);
+  Py_XDECREF(py_exception_value);
+  Py_XDECREF(py_exception_traceback);
+
+  js_exception.ThrowAsJavaScriptException();
+}
+
+Napi::Error ConvertToJSException(Napi::Env env,
                                  PyObject* py_exception_type,
                                  PyObject* py_exception_value,
                                  PyObject* py_exception_traceback) {
-#if 0
-
   if (py_exception_type == NULL)
-    return scope.Escape(
-        Napi::Error(String::NewFromUtf8(env, "No exception found")));
+    return Napi::Error::New(env, "No exception found");
 
-  Local<String> js_message;
+  std::string js_message;
   if (py_exception_value != NULL) {
     if (PyObject_TypeCheck(py_exception_value, &PyUnicode_Type)) {
-      js_message =
-          String::NewFromUtf8(env, PyUnicode_AsUTF8(py_exception_value));
+      // If Exception(String), just take the string
+      js_message = PyUnicode_AsUTF8(py_exception_value);
     } else if (PyObject_TypeCheck(py_exception_value, &PyTuple_Type) &&
                PyTuple_Size(py_exception_value) > 0) {
-      js_message = String::NewFromUtf8(
-          env, PyUnicode_AsUTF8(PyTuple_GetItem(py_exception_value, 0)));
+      js_message = PyUnicode_AsUTF8(PyTuple_GetItem(py_exception_value, 0));
     } else {
       PyObject* py_exception_value_string = PyObject_Str(py_exception_value);
-      js_message =
-          String::NewFromUtf8(env, PyUnicode_AsUTF8(py_exception_value_string));
+      js_message = PyUnicode_AsUTF8(py_exception_value_string);
       Py_XDECREF(py_exception_value_string);
     }
   } else {
-    js_message = String::NewFromUtf8(env, "Unknown exception");
+    js_message = "Unknown exception";
   }
 
-  Local<Value> js_exception;
+  js_message = "Python: " + js_message;
+
+  Napi::Error js_exception;
   if (PyErr_GivenExceptionMatches(py_exception_type, PyExc_IndexError) != 0) {
-    js_exception = Exception::RangeError(js_message);
+    js_exception = Napi::RangeError::New(env, js_message);
   } else if (PyErr_GivenExceptionMatches(py_exception_type,
                                          PyExc_ReferenceError) != 0) {
-    js_exception = Exception::ReferenceError(js_message);
+    // TODO: not easy to throw a ReferenceError in N-API at the moment
+    js_exception = Napi::Error::New(env, "SyntaxError: " + js_message);
   } else if (PyErr_GivenExceptionMatches(py_exception_type,
                                          PyExc_SyntaxError) != 0) {
-    js_exception = Exception::SyntaxError(js_message);
+    // TODO: not easy to throw a SyntaxError in N-API at the moment
+    js_exception = Napi::Error::New(env, "SyntaxError: " + js_message);
   } else if (PyErr_GivenExceptionMatches(py_exception_type, PyExc_TypeError) !=
              0) {
-    js_exception = Exception::TypeError(js_message);
+    js_exception = Napi::TypeError::New(env, js_message);
   } else {
-    js_exception = Exception::Error(js_message);
+    js_exception = Napi::Error::New(env, js_message);
   }
 
-#endif
-  return Napi::Error::New(env, "TODO: Convert this Python exception");
+  return js_exception;
 }
 
-Napi::Value ConvertToJSException(const Napi::Env& env, PyObject* py_exception) {
-  Napi::EscapableHandleScope scope(env);
-  auto js_exception =
-      ConvertToJSException(env, py_exception, py_exception, NULL);
-  return scope.Escape(js_exception.Value());
-}
+// Napi::Error ConvertToJSException(Napi::Env env, PyObject* py_exception) {
+//   Napi::EscapableHandleScope scope(env);
+//   auto js_exception =
+//       ConvertToJSException(env, py_exception, py_exception, NULL);
+//   return js_exception.Value();
+// }
 
 static void print_typechecks(PyObject* py_object) {
   std::cout << "done with printing type" << std::endl;
@@ -104,6 +155,8 @@ Napi::String StringToJS(const Napi::Env& env, PyObject* py_object) {
 }
 
 Napi::Value ConvertToJS(const Napi::Env& env, PyObject* py_object) {
+  // const char* tp_name = py_object ? py_object->ob_type->tp_name : "None";
+  // std::cout << "ConvertToJS " << py_object << " " << tp_name << std::endl;
   // The Python API is not const-correct
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wwritable-strings"
@@ -116,21 +169,28 @@ Napi::Value ConvertToJS(const Napi::Env& env, PyObject* py_object) {
   if (py_object == nullptr) {
     std::cout << "ConvertToJS passed nullptr. Does this mean there is an error?"
               << std::endl;
-    return scope.Escape(scope.Env().Null());
+    ThrowPythonException(env);
+    return env.Undefined();
   }
 #if DEBUG
   print_typechecks(py_object);
 #endif
 
-  if (PyNumber_Check(py_object) != 0) {
+  if (py_object == Py_None) {
+    std::cout << "Found Null object" << std::endl;
+    return env.Null();
+  } else if (PyFloat_Check(py_object) != 0) {
     auto value = PyFloat_AsDouble(py_object);
+    return scope.Escape(Napi::Number::New(env, value));
+  } else if (PyLong_Check(py_object) != 0) {
+    auto value = PyLong_AsLong(py_object);
     return scope.Escape(Napi::Number::New(env, value));
   } else if (PyUnicode_Check(py_object) != 0) {
     auto str = StringToJS(env, py_object);
     return scope.Escape(str);
   } else if (PyCallable_Check(py_object) != 0) {  // Function
     Py_XINCREF(py_object);
-    auto js_function = PyObjectProxyHandler::WrapCallable(env, py_object);
+    auto js_function = WrapCallable(env, py_object);
     // Local<FunctionTemplate> js_function_template =
     //     FunctionTemplate::New(env, Call, New(py_object));
     // Local<Function> js_function = js_function_template->GetFunction();
@@ -139,9 +199,11 @@ Napi::Value ConvertToJS(const Napi::Env& env, PyObject* py_object) {
     //   js_function->SetName(js_function_name->ToString());
     return scope.Escape(js_function);
   } else if (PyExceptionInstance_Check(py_object)) {
-    std::cout << "Converting python exception." << std::endl;
-    auto js_exception = ConvertToJSException(env, py_object);
-    return scope.Escape(js_exception);
+    std::cout << "Converting python exception unimplemented." << std::endl;
+    // TODO: unit test create python exception, but don't throw
+    // auto js_exception = ConvertToJSException(env, py_object);
+    // return scope.Escape(js_exception);
+    return scope.Escape(env.Null());
   } else if (PyDict_Check(py_object)) {
     std::cout << "Converting python dict." << std::endl;
     int length = (int)PyMapping_Length(py_object);
@@ -170,24 +232,19 @@ Napi::Value ConvertToJS(const Napi::Env& env, PyObject* py_object) {
       js_array.Set(i, js_item);
     }
     return scope.Escape(js_array);
-  } else if (PyArray_Check(py_object)) {
-    std::cout << "Found numpy array." << std::endl;
-  } else if (PyModule_Check(py_object)) {
-    std::cout << "Cannot really export module." << std::endl;
-    PyObject* module_dict = PyModule_GetDict(py_object);
-    auto dict = ConvertToJS(env, module_dict);
-    return scope.Escape(dict);
+    // } else if (PyArray_Check(py_object)) {
+    //   std::cout << "Found numpy array." << std::endl;
   } else {
-    // TODO: here is where we want to return a PyObjectWrapper that will serve
-    // as a proxy for the desired object
-    std::cout << "Converting python unknown object of type"
-              << py_object->ob_type->tp_name << std::endl;
-    PyObject* str_repr = PyObject_Str(py_object);
-    if (PyUnicode_Check(str_repr)) {
-      auto str = StringToJS(env, str_repr);
-      Py_DECREF(str_repr);
-      return scope.Escape(str);
-    }
+    // Any other kind of object, wrap it in a proxy to return to JS
+    std::cout << "Convert generic (" << py_object->ob_type->tp_name << ")"
+              << std::endl;
+    // PyObject* module_dict = PyModule_GetDict(py_object);
+    // Wrap the module dict
+    auto wrapped = PyObjectProxyHandler::WrapObject(env, py_object);
+    // std::cout << "start converting module." << std::endl;
+    // auto dict = ConvertToJS(env, module_dict);
+    // std::cout << "end converting module." << std::endl;
+    return scope.Escape(wrapped);
   }
 
   return scope.Escape(Napi::Value());
@@ -195,12 +252,13 @@ Napi::Value ConvertToJS(const Napi::Env& env, PyObject* py_object) {
 }
 
 PyObject* ConvertToPy(Napi::Value value) {
-  std::cout << "Converting value to Py: " << value.ToString().Utf8Value()
-            << std::endl;
+  // std::cout << "ConvertToPy: " << CoerceToString(value)
+  //           << " type: " << value.Type() << std::endl;
   auto type = value.Type();
   switch (type) {
     case napi_undefined:
     case napi_null:
+      Py_INCREF(Py_None);
       return Py_None;
     case napi_boolean:
       return PyBool_FromLong((long)value.As<Napi::Boolean>().Value());
@@ -214,9 +272,9 @@ PyObject* ConvertToPy(Napi::Value value) {
     }
     case napi_symbol: {
       // Can't exactly round-trip this with JS at the moment
+      // Just convert a symbol to a string for now
       Napi::Symbol symo = value.As<Napi::Symbol>();
-      auto symd = symo.ToString();
-      auto strv = symd.Utf8Value();
+      auto strv = describe_symbol(symo);
       return PyUnicode_FromStringAndSize(strv.c_str(), strv.length());
     }
     case napi_object: {
@@ -232,9 +290,18 @@ PyObject* ConvertToPy(Napi::Value value) {
         }
         return list;
       } else if (value.IsTypedArray()) {
-        return nullptr;
-      } else {
         // TODO: typed arrays
+        Py_INCREF(Py_None);
+        return Py_None;
+      } else if (PyObjectProxyHandler::IsProxyValue(value)) {
+        auto py_object = PyObjectProxyHandler::GetProxyValue(value).Data();
+        Py_INCREF(py_object);
+        return py_object;
+      } else if (value.IsExternal()) {
+        std::cout << "Value is Object said to be external" << std::endl;
+        Py_INCREF(Py_None);
+        return Py_None;
+      } else {
         // For generality, convert a generic Object {k: v} -> Dictionary()
         // But, if there is a prototype, warn & in future do more full
         // conversion
@@ -244,24 +311,87 @@ PyObject* ConvertToPy(Napi::Value value) {
 
         PyObject* dict = _PyDict_NewPresized(length);
         for (size_t i = 0; i < length; i++) {
-          auto strv = Napi::Object::Value(props[i]).As<Napi::String>();
-          auto item = ov[strv];
-          auto py_item = ConvertToPy(item);
-          // Doesn't steal reference
-          PyDict_SetItemString(dict, strv.Utf8Value().c_str(), py_item);
-          Py_DECREF(py_item);
+          auto value = Napi::Object::Value(props[i]);
+          if (value.IsString()) {
+            auto strv = value.As<Napi::String>();
+            auto item = ov[strv];
+            auto py_item = ConvertToPy(item);
+            // Doesn't steal reference
+            PyDict_SetItemString(dict, strv.Utf8Value().c_str(), py_item);
+            Py_DECREF(py_item);
+          } else {
+            Napi::Error::New(value.Env(),
+                             "python-node-embed erro.r: Tried to convert dict "
+                             "with non-string key.")
+                .ThrowAsJavaScriptException();
+          }
         }
 
         return dict;
       }
     }
-    case napi_function:
+    case napi_function: {
+      std::cout << "Asked to convert JS function to Py" << std::endl;
+
       return nullptr;
-    case napi_external:
-      return nullptr;
+    }
+    case napi_external: {
+      std::cout << "Value is external" << std::endl;
+      auto external = value.As<Napi::External<PyObject>>();
+      PyObject* py_object = external.Data();
+      Py_INCREF(py_object);
+      return py_object;
+    }
     case napi_bigint:
       return nullptr;
   }
+  Py_INCREF(Py_None);
+  return Py_None;
+}
 
-  return PyFloat_FromDouble(0);
+std::string describe_symbol(Napi::Symbol symbol) {
+  std::string str = CoerceToString(symbol);
+  if (str != "") {
+    return str;
+  } else {
+    return "<Bad Symbol>";
+  }
+}
+
+std::string describe_napi_value_type(Napi::Value value) {
+  switch (value.Type()) {
+    case napi_undefined:
+      return "undefined";
+    case napi_null:
+      return "null";
+    case napi_boolean:
+      return "boolean";
+    case napi_number:
+      return "number";
+    case napi_string:
+      return "string";
+    case napi_symbol:
+      return "symbol";
+
+    case napi_object: {
+      // Is this an array
+      if (value.IsArray()) {
+        return "object:Array";
+      } else if (value.IsTypedArray()) {
+        return "object:TypedArray";
+      } else if (value.IsExternal()) {
+        return "object:External";
+      } else {
+        return "object";
+      }
+    }
+    case napi_function:
+      return "function";
+
+    case napi_external:
+      return "external";
+
+    case napi_bigint:
+      return "bigint";
+  }
 }

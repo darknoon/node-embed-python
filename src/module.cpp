@@ -31,7 +31,10 @@ Napi::Value exec(const Napi::CallbackInfo& info) {
   PyObject* result =
       PyRun_StringFlags(str.c_str(), Py_file_input, globals, locals, &flags);
 
-  // TODO: exception handling
+  // Exception handling
+  if (!result) {
+    ThrowPythonException(env);
+  }
 
   // Return a dictionary of local variables to the caller
   auto retval = ConvertToJS(env, locals);
@@ -64,26 +67,35 @@ Napi::Value evalExpr(const Napi::CallbackInfo& info) {
   PyObject* result =
       PyRun_StringFlags(str.c_str(), Py_eval_input, globals, locals, &flags);
   // TODO: exception handling
+  std::cout << "evalExpr() result value:" << result << std::endl;
 
+  // Exception handling
+  if (!result) {
+    ThrowPythonException(env);
+    return env.Undefined();
+  }
   auto js_result = ConvertToJS(env, result);
 
+  Py_DECREF(locals);
   Py_XDECREF(result);
   return scope.Escape(js_result);
 }
 
 // Initialize this module, setting up python
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
+  std::cout << "Python initializing..." << std::endl;
   Py_Initialize();
-// We crash without this becaus the dylib isn't open yet
-std:
+
+  PyThreadStateLock py_thread_lock;
+  std::cout << "Python initialized." << std::endl;
+  // We crash without this becaus the dylib isn't open yet
   // import_array() defines some things inline, which conficts with  our Object
   // definition
   do_numpy_import();
 
   exports.Set("exec", Napi::Function::New(env, exec));
   exports.Set("evalExpr", Napi::Function::New(env, evalExpr));
-  auto noexport = Napi::Object();
-  PyObjectProxyHandler::Init(env, exports);
+  PyObjectProxyHandler::Initialize(env, exports);
   return exports;
 }
 
