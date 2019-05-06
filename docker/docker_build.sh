@@ -1,0 +1,1 @@
+docker build --tag node-embed-python -f test_numpy/Dockerfile test_numpy/
